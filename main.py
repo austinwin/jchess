@@ -82,7 +82,9 @@ def training_info(db,s,parent_view=False):
     data=dict(id=s.id,child_id=s.child_id,mode=s.mode,fen=s.fen,moves=json.loads(s.moves),
               step=s.step,errors=s.errors,solved=s.solved,revealed=s.revealed,
               version=s.version,updated_at=s.updated_at.isoformat()+"Z")
-    if p:data["puzzle"]=puzzle_public(p,parent_view,s.revealed)
+    if p:
+        data["puzzle"]=puzzle_public(p,parent_view,s.revealed)
+        if s.solved:data["puzzle"]["takeaway"]=p.explanation
     return data
 def latest(db,child_id):
     return db.scalar(select(Training).where(Training.child_id==child_id).order_by(Training.id.desc()).limit(1))
@@ -195,7 +197,13 @@ def catalog(db:Session=Depends(session),u=Depends(require)):
 @app.get("/api/lessons")
 def lesson_catalog(db:Session=Depends(session),u=Depends(require)):
     counts=dict(db.execute(select(Puzzle.theme,func.count(Puzzle.id)).group_by(Puzzle.theme)).all())
-    return [{**lesson,"puzzles":counts.get(lesson["theme"],0)} for lesson in LESSONS]
+    progress={}
+    if u.role=="child":
+        rows=db.execute(select(Puzzle.theme,Attempt.correct).join(Attempt,Puzzle.id==Attempt.puzzle_id).where(Attempt.child_id==u.id)).all()
+        for theme,correct in rows:
+            p=progress.setdefault(theme,{"attempted":0,"correct":0})
+            p["attempted"]+=1;p["correct"]+=int(correct)
+    return [{**lesson,"puzzles":counts.get(lesson["theme"],0),**progress.get(lesson["theme"],{"attempted":0,"correct":0})} for lesson in LESSONS]
 
 @app.get("/api/child/dashboard")
 def child_dashboard(db:Session=Depends(session),u=Depends(child)):
