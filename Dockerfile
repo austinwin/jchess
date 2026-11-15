@@ -11,8 +11,8 @@ RUN apt-get update -qq && apt-get install -y --no-install-recommends stockfish &
 ENV STOCKFISH_PATH=/usr/games/stockfish
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py db.py content.py lessons.py bot.py game_routes.py adaptive.py ./
-RUN python -c "import main, lessons, bot, game_routes, adaptive; assert len(lessons.LESSONS) >= 14; assert adaptive.engine_path()"
+COPY main.py db.py content.py lessons.py bot.py game_routes.py adaptive.py coach_routes.py ./
+RUN python -c "import main, lessons, bot, game_routes, coach_routes, adaptive; assert len(lessons.LESSONS) >= 14; assert adaptive.engine_path()"
 COPY scripts ./scripts
 COPY frontend/package.json frontend/package.json
 COPY --from=frontend /app/frontend/dist ./frontend/dist

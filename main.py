@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, delete
 from sqlalchemy.orm import Session
-from db import DB, User, Family, Login, Puzzle, Training, Attempt, AIConfig, AIUsage, CloudPlay, initialize, hash_pw, verify_pw, digest, is_parent, now
+from db import DB, User, Family, Login, Puzzle, Training, Attempt, AIConfig, AIUsage, CloudPlay, CoachAccess, initialize, hash_pw, verify_pw, digest, is_parent, now
 from content import CATEGORIES, seed
 from lessons import LESSONS, LESSON_BY_ID
 
@@ -136,6 +136,8 @@ class AIOptions(BaseModel):
     daily_limit:int|None=Field(default=None,ge=1,le=10)
     cloud_enabled:bool|None=None
     cloud_daily_limit:int|None=Field(default=None,ge=1,le=50)
+    coach_enabled:bool|None=None
+    coach_daily_limit:int|None=Field(default=None,ge=1,le=50)
 
 @app.get("/api/health")
 def health():
@@ -350,7 +352,13 @@ def ai_status(db:Session=Depends(session),u=Depends(parent)):
     used=usage.requests if usage and usage.day==now().date().isoformat() else 0
     cloud=db.get(CloudPlay,u.id)
     cloud_used=cloud.used if cloud and cloud.day==now().date().isoformat() else 0
+    coach=db.get(CoachAccess,u.id)
+    coach_used=coach.used if coach and coach.day==now().date().isoformat() else 0
     return {"enabled":bool(s and s.enabled),"has_key":bool(s and s.key_cipher),
+            "coach_enabled":bool(coach and coach.enabled and s and s.enabled and s.key_cipher),
+            "coach_daily_limit":coach.daily_limit if coach else 3,
+            "coach_requests_today":coach_used,
+            "coach_remaining_today":max(0,(coach.daily_limit if coach else 3)-coach_used),
             "daily_limit":usage.daily_limit if usage else 3,"used_today":used,
             "remaining_today":max(0,(usage.daily_limit if usage else 3)-used),
             "cloud_enabled":bool(cloud and cloud.enabled and s and s.enabled and s.key_cipher),
@@ -380,6 +388,15 @@ def ai_settings(data:AIOptions,db:Session=Depends(session),u=Depends(parent)):
         raise HTTPException(400,"Save and enable an API key before allowing cloud games")
     if data.cloud_enabled is not None:permission.enabled=data.cloud_enabled
     if not data.enabled or not s.key_cipher:permission.enabled=False
+    coach=db.get(CoachAccess,u.id)
+    if not coach:
+        coach=CoachAccess(parent_id=u.id,enabled=False,daily_limit=3,day="",used=0)
+        db.add(coach)
+    if data.coach_daily_limit is not None:coach.daily_limit=data.coach_daily_limit
+    if data.coach_enabled and (not data.enabled or not s.key_cipher):
+        raise HTTPException(400,"Save and enable an API key before allowing Coach Hoang's AI explanations")
+    if data.coach_enabled is not None:coach.enabled=data.coach_enabled
+    if not data.enabled or not s.key_cipher:coach.enabled=False
     s.enabled=data.enabled;db.commit()
     return ai_status(db,u)
 
@@ -419,7 +436,9 @@ def ai_coach(cid:int,db:Session=Depends(session),u=Depends(parent)):
         raise HTTPException(502,"AI request failed. Check the key, account credits, and provider availability.")
 
 from game_routes import setup_games
+from coach_routes import setup_coach
 setup_games(app,session,child,parent)
+setup_coach(app,session,child,parent,training_info)
 
 if __name__=="__main__":
     from qpyserve import run
