@@ -9,8 +9,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
 WORKDIR /app
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
-COPY main.py db.py content.py lessons.py ./
-RUN python -c "import main, lessons; assert len(lessons.LESSONS) >= 14"
+COPY main.py db.py content.py lessons.py bot.py game_routes.py ./
+RUN python -c "import main, lessons, bot, game_routes; assert len(lessons.LESSONS) >= 14"
 COPY scripts ./scripts
 COPY frontend/package.json frontend/package.json
 COPY --from=frontend /app/frontend/dist ./frontend/dist

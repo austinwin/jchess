@@ -71,6 +71,32 @@ class AIUsage(Base):
     requests:Mapped[int]=mapped_column(Integer,default=0)
     daily_limit:Mapped[int]=mapped_column(Integer,default=3)
 
+class CloudPlay(Base):
+    """Parent-only permission and an independent daily cloud-move budget."""
+    __tablename__="cloud_play"
+    parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),primary_key=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,default=False)
+    daily_limit:Mapped[int]=mapped_column(Integer,default=20)
+    day:Mapped[str]=mapped_column(String(10),default="")
+    used:Mapped[int]=mapped_column(Integer,default=0)
+
+class Game(Base):
+    """Server-authoritative free-play games; invite hashes never contain raw tokens."""
+    __tablename__="games"
+    id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    child_id:Mapped[int]=mapped_column(ForeignKey("users.id"),index=True)
+    parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),index=True)
+    mode:Mapped[str]=mapped_column(String(12)) # bot, local, parent, friend
+    provider:Mapped[str]=mapped_column(String(12),default="builtin")
+    level:Mapped[str]=mapped_column(String(8),default="medium")
+    fen:Mapped[str]=mapped_column(Text)
+    moves:Mapped[str]=mapped_column(Text,default="[]")
+    status:Mapped[str]=mapped_column(String(16),default="active")
+    invite_hash:Mapped[str|None]=mapped_column(String(64),unique=True,nullable=True)
+    version:Mapped[int]=mapped_column(Integer,default=1)
+    created_at:Mapped[datetime]=mapped_column(DateTime,default=now)
+    updated_at:Mapped[datetime]=mapped_column(DateTime,default=now)
+
 class AIConfig(Base):
     __tablename__="ai_config"
     parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),primary_key=True)

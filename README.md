@@ -16,6 +16,18 @@
 - Server-side move legality and answer validation with python-chess.
 - Optional parent-supplied OpenAI API key, encrypted at rest, for a manually requested performance-based coaching report. It stays OFF by default. Only aggregate category statistics leave the server. Parents can choose 1–10 requests per day (enforced in PostgreSQL), disable AI, replace or delete the key. The browser never receives the stored key.
 
+## Free play: parent, friends and robots
+
+**Play** now gives students four choices:
+1. **Built-in robot:** free, no API key, with Easy (varied beginner moves), Medium (2-ply search) and Hard (3-ply search) difficulty. The bot uses a local move-selection algorithm and `python-chess` for rules validation. It is useful for practice but not a grandmaster-grade engine. It never calls an outside provider.
+2. **Parent:** the child plays White while a family-linked parent logs in and opens **Play together** to play Black from another device. This mode uses authenticated, server-authoritative moves.
+3. **Friend:** the child creates a private invitation and shares the link. The guest controls Black without registering. The 256-bit bearer token is kept in the URL **fragment** (never transmitted as part of the initial page request) and stored only as a SHA-256 hash server-side. Anyone who gets the link can take the Black seat; treat it like a private password. Friend links expire after seven days and are immediately revoked when the child ends that game or creates a newer friend game. The child may retrieve their own link only from the browser session where it was created.
+4. **Share one screen:** two people pass the tablet or computer; the board flips each turn.
+
+All games save moves and state in PostgreSQL and validate legal moves on the backend. The UI polls periodically so moves appear on other devices. No arbitrary opponent can join a family game without either parent authorization or the friend invitation.
+
+**Optional cloud robot**: Only a parent can allow use of a separately encrypted OpenAI project API key. Cloud play is hidden from child accounts until the parent enables AI, enables cloud robot games, and sets a separate daily move limit (1–50). Each cloud move sends the current board FEN and legal UCI move list, **not names or accounts**, to OpenAI, and is validated locally before being applied. If cloud calls fail, return an invalid move or the quota runs out, the built-in robot automatically takes over. The quota is a count of attempted cloud moves, not a dollar-denominated spending cap. This cloud bot can be less chess-competent than the local Hard bot; use the built-in bot for predictable training.
+
 ## Local development
 
 Requires Python 3.10+, Node 20+ and npm.

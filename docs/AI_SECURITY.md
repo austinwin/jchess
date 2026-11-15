@@ -26,3 +26,13 @@
 - The encryption secret protects the database backup from a standalone leak, but anyone with access to both the production database and the Render encryption key could still decrypt the stored keys. Restrict Render project access.
 - An authorized parent's browser can create requests, so protect the parent login and change bootstrap passwords promptly.
 - Automatic provider coaching and any chat for children are intentionally disabled. AI is an **optional parent tool**, never used to validate chess moves.
+
+## Cloud robot games
+
+A parent may opt in separately to allowing **cloud robot moves** from the child game screen. This is not enabled by simply saving an API key. Child accounts only receive a boolean `cloud_available` plus a remaining-move count; they cannot fetch the key, modify permission, or bypass the 1–50-request daily cap.
+
+Each cloud request contains the current FEN position, a list of legal UCI moves, and a difficulty instruction. No child's name, email, username, or account ID is transmitted. The language model's move is accepted **only if** python-chess confirms it is legal; otherwise the local bot responds. A cloud request costs API credits and can be slower than the built-in bot.
+
+A `cloud_play` table contains a parent-scoped permission, daily budget, UTC day, and attempts used. The count is updated under a database row lock before the provider call to block concurrent quota bypass. Disabling AI or removing the API key also revokes cloud-play permission. The `ai_usage` table retains separate report quotas.
+
+Friend-match invitation codes are created with `secrets.token_urlsafe(32)`, shared in a URL fragment, and only SHA-256 hashes are stored in the `games` table. A leaked invitation is equivalent to sharing the opponent's seat. Friend links expire in seven days, are automatically revoked when the child starts another friend game, and can be revoked immediately using **End game**. Do not share friend invitations publicly.
