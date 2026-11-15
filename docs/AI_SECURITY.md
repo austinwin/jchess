@@ -35,4 +35,4 @@ Each cloud request contains the current FEN position, a list of legal UCI moves,
 
 A `cloud_play` table contains a parent-scoped permission, daily budget, UTC day, and attempts used. The count is updated under a database row lock before the provider call to block concurrent quota bypass. Disabling AI or removing the API key also revokes cloud-play permission. The `ai_usage` table retains separate report quotas.
 
-Friend-match invitation codes are created with `secrets.token_urlsafe(32)`, shared in a URL fragment, and only SHA-256 hashes are stored in the `games` table. A leaked invitation is equivalent to sharing the opponent's seat. Do not share friend invitations publicly.
+Friend-match invitation codes are created with `secrets.token_urlsafe(32)`, shared in a URL fragment, and only SHA-256 hashes are stored in the `games` table. A leaked invitation is equivalent to sharing the opponent's seat. Friend links expire in seven days, are automatically revoked when the child starts another friend game, and can be revoked immediately using **End game**. Do not share friend invitations publicly.
