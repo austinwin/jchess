@@ -63,6 +63,14 @@ class Attempt(Base):
     correct:Mapped[bool]=mapped_column(Boolean)
     errors:Mapped[int]=mapped_column(Integer,default=0)
     at:Mapped[datetime]=mapped_column(DateTime,default=now)
+class AIUsage(Base):
+    """Per-parent budget counter, stored without keys or prompts."""
+    __tablename__="ai_usage"
+    parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),primary_key=True)
+    day:Mapped[str]=mapped_column(String(10),default="")
+    requests:Mapped[int]=mapped_column(Integer,default=0)
+    daily_limit:Mapped[int]=mapped_column(Integer,default=3)
+
 class AIConfig(Base):
     __tablename__="ai_config"
     parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),primary_key=True)

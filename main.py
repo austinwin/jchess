@@ -9,19 +9,23 @@ import httpx
 from cryptography.fernet import Fernet
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, select, delete
 from sqlalchemy.orm import Session
-from db import DB, User, Family, Login, Puzzle, Training, Attempt, AIConfig, initialize, hash_pw, verify_pw, digest, is_parent, now
+from db import DB, User, Family, Login, Puzzle, Training, Attempt, AIConfig, AIUsage, initialize, hash_pw, verify_pw, digest, is_parent, now
 from content import CATEGORIES, seed
+from lessons import LESSONS, LESSON_BY_ID
 
 @asynccontextmanager
 async def lifespan(app):
     initialize()
     with DB.begin() as db:
-        if not db.scalar(select(Puzzle.id).limit(1)):
-            for item in seed():
+        existing=set(db.scalars(select(Puzzle.id)).all())
+        new=[]
+        for item in seed():
+            if item["id"] not in existing:
                 item["solution"]=json.dumps(item["solution"])
-                db.add(Puzzle(**item))
+                new.append(Puzzle(**item))
+        if new:db.add_all(new)
     yield
 
 app=FastAPI(title="JChess Academy API",version="1.0.0",lifespan=lifespan)
@@ -37,6 +41,8 @@ async def same_origin(request:Request,call_next):
     response.headers["X-Content-Type-Options"]="nosniff"
     response.headers["Referrer-Policy"]="strict-origin-when-cross-origin"
     response.headers["X-Frame-Options"]="DENY"
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"]="no-store"
     return response
 
 def session():
@@ -115,6 +121,7 @@ class ChangePassword(BaseModel):
 class NewChild(Signup):pass
 class StartPuzzle(BaseModel):
     category:str|None=None
+    lesson_id:str|None=Field(default=None,max_length=40)
 class MoveRequest(BaseModel):
     uci:str=Field(min_length=4,max_length=5)
 class SquareRequest(BaseModel):
@@ -124,6 +131,7 @@ class RevealRequest(BaseModel):
 class AIOptions(BaseModel):
     enabled:bool
     api_key:str|None=Field(default=None,max_length=500)
+    daily_limit:int|None=Field(default=None,ge=1,le=10)
 
 @app.get("/api/health")
 def health():
@@ -160,11 +168,13 @@ def me(u=Depends(auth)):
     return safe_user(u) if u else None
 
 @app.post("/api/auth/password")
-def update_password(input:ChangePassword,response:Response,db:Session=Depends(session),u=Depends(auth)):
+def update_password(input:ChangePassword,request:Request,response:Response,db:Session=Depends(session),u=Depends(auth)):
     if not u:raise HTTPException(401,"Sign in first")
     if not verify_pw(input.current,u.password_hash):raise HTTPException(400,"Current password is incorrect")
     if input.current==input.new:raise HTTPException(400,"Choose a new password")
     u.password_hash=hash_pw(input.new);u.must_reset=False
+    # Invalidate other devices after any password change, but keep this login.
+    db.execute(delete(Login).where(Login.user_id==u.id,Login.token_hash!=digest(request.cookies.get("jchess_session",""))))
     db.commit();return {"ok":True}
 
 @app.post("/api/auth/logout")
@@ -182,13 +192,20 @@ def catalog(db:Session=Depends(session),u=Depends(require)):
     return {"categories":{k:{**v,"count":counts.get(k,0)} for k,v in CATEGORIES.items()},
             "total":sum(counts.values())}
 
+@app.get("/api/lessons")
+def lesson_catalog(db:Session=Depends(session),u=Depends(require)):
+    counts=dict(db.execute(select(Puzzle.theme,func.count(Puzzle.id)).group_by(Puzzle.theme)).all())
+    return [{**lesson,"puzzles":counts.get(lesson["theme"],0)} for lesson in LESSONS]
+
 @app.get("/api/child/dashboard")
 def child_dashboard(db:Session=Depends(session),u=Depends(child)):
     return {"user":safe_user(u),"stats":count_stats(db,u.id),"active":training_info(db,latest(db,u.id))}
 
 @app.post("/api/child/puzzle/start")
 def start_puzzle(input:StartPuzzle,db:Session=Depends(session),u=Depends(child)):
-    cat=input.category
+    lesson=LESSON_BY_ID.get(input.lesson_id) if input.lesson_id else None
+    if input.lesson_id and not lesson:raise HTTPException(400,"Unknown lesson")
+    cat=lesson["category"] if lesson else input.category
     if cat and cat not in CATEGORIES:raise HTTPException(400,"Unknown exercise category")
     stats=count_stats(db,u.id)
     if not cat:
@@ -196,8 +213,10 @@ def start_puzzle(input:StartPuzzle,db:Session=Depends(session),u=Depends(child))
         cat=min(CATEGORIES,key=lambda k:(by[k]["accuracy"] if by[k]["accuracy"] is not None else 55,
                                          by[k]["attempts"]))
     attempted={r for r in db.scalars(select(Attempt.puzzle_id).where(Attempt.child_id==u.id)).all()}
-    catalog=db.scalars(select(Puzzle).where(Puzzle.category==cat)).all()
-    if not catalog:raise HTTPException(404,"No exercises in this category")
+    query=select(Puzzle).where(Puzzle.category==cat)
+    if lesson:query=query.where(Puzzle.theme==lesson["theme"])
+    catalog=db.scalars(query).all()
+    if not catalog:raise HTTPException(404,"No exercises in this lesson")
     target_rating=650+min(600,stats["completed"]*8)
     unseen=[p for p in catalog if p.id not in attempted]
     pool=unseen or catalog
@@ -240,9 +259,12 @@ def puzzle_move(data:MoveRequest,db:Session=Depends(session),u=Depends(child)):
         s.fen=b.fen()
         if s.step>=len(line):
             s.solved=True;add_attempt(db,s)
-    else:s.errors+=1
+    elif p.category!="strategy":
+        s.errors+=1
+    # Strategy has multiple reasonable moves; we demonstrate a model move
+    # without marking another legal plan as a chess mistake.
     s.moves=json.dumps(logs);bump(s);db.commit()
-    return {"correct":correct,"state":training_info(db,s)}
+    return {"correct":correct,"model_move":p.category=="strategy","state":training_info(db,s)}
 
 @app.post("/api/child/puzzle/spot")
 def spot(data:SquareRequest,db:Session=Depends(session),u=Depends(child)):
@@ -314,17 +336,27 @@ def cipher():
 @app.get("/api/parent/ai")
 def ai_status(db:Session=Depends(session),u=Depends(parent)):
     s=db.get(AIConfig,u.id)
-    return {"enabled":bool(s and s.enabled),"has_key":bool(s and s.key_cipher)}
+    usage=db.get(AIUsage,u.id)
+    used=usage.requests if usage and usage.day==now().date().isoformat() else 0
+    return {"enabled":bool(s and s.enabled),"has_key":bool(s and s.key_cipher),
+            "daily_limit":usage.daily_limit if usage else 3,"used_today":used,
+            "remaining_today":max(0,(usage.daily_limit if usage else 3)-used)}
 
 @app.post("/api/parent/ai")
 def ai_settings(data:AIOptions,db:Session=Depends(session),u=Depends(parent)):
     s=db.get(AIConfig,u.id)
     if not s:s=AIConfig(parent_id=u.id);db.add(s)
     if data.api_key is not None:
-        s.key_cipher=cipher().encrypt(data.api_key.encode()).decode() if data.api_key.strip() else ""
+        key=data.api_key.strip()
+        if key and (not key.startswith("sk-") or len(key)<20):
+            raise HTTPException(400,"Enter a valid OpenAI project API key")
+        s.key_cipher=cipher().encrypt(key.encode()).decode() if key else ""
     if data.enabled and not s.key_cipher:raise HTTPException(400,"Enter an API key first")
+    usage=db.get(AIUsage,u.id)
+    if not usage:usage=AIUsage(parent_id=u.id,day="",requests=0,daily_limit=3);db.add(usage)
+    if data.daily_limit is not None:usage.daily_limit=data.daily_limit
     s.enabled=data.enabled;db.commit()
-    return {"enabled":s.enabled,"has_key":bool(s.key_cipher)}
+    return ai_status(db,u)
 
 @app.post("/api/parent/children/{cid}/coach")
 def ai_coach(cid:int,db:Session=Depends(session),u=Depends(parent)):
@@ -332,6 +364,15 @@ def ai_coach(cid:int,db:Session=Depends(session),u=Depends(parent)):
     settings=db.get(AIConfig,u.id)
     if not settings or not settings.enabled or not settings.key_cipher:
         raise HTTPException(400,"Enable AI coaching and save your API key first")
+    # Lock the budget row so concurrent requests cannot bypass the daily cap.
+    usage=db.scalar(select(AIUsage).where(AIUsage.parent_id==u.id).with_for_update())
+    if not usage:raise HTTPException(400,"Save your AI settings first")
+    day=now().date().isoformat()
+    if usage.day!=day:usage.day=day;usage.requests=0
+    if usage.requests>=usage.daily_limit:
+        raise HTTPException(429,"Today's AI report limit has been reached. Try again tomorrow.")
+    usage.requests+=1
+    db.commit()
     info=count_stats(db,cid)
     categories={cat:v for cat,v in info["by_category"].items()}
     # Only aggregated exercise performance is sent; no names, usernames or game histories.
@@ -343,7 +384,7 @@ def ai_coach(cid:int,db:Session=Depends(session),u=Depends(parent)):
         with httpx.Client(timeout=22) as client:
             r=client.post("https://api.openai.com/v1/chat/completions",
                headers={"Authorization":"Bearer "+key},
-               json={"model":"gpt-4.1-mini","temperature":0.3,"max_tokens":450,
+               json={"model":"gpt-4.1-mini","temperature":0.3,"max_tokens":450,"store":False,
                      "messages":[{"role":"system","content":"You are a careful chess coach for children. Never invent validated puzzle solutions."},
                                  {"role":"user","content":msg}]})
             r.raise_for_status()

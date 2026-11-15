@@ -7,7 +7,8 @@ CATEGORIES={
  "tactics":dict(label="Tactics treasure",icon="zap",description="Forks and tactical attacks"),
  "thinking":dict(label="Think like a champion",icon="brain",description="See your opponent's threats"),
  "endgames":dict(label="Endgame hero",icon="crown",description="Promotion and checkmate"),
- "openings":dict(label="Opening explorer",icon="compass",description="Develop pieces and control the center")
+ "openings":dict(label="Opening explorer",icon="compass",description="Develop pieces and control the center"),
+ "strategy":dict(label="Strategy studio",icon="target",description="Make plans: center, king safety, activity, pawns and open files")
 }
 def make(pid,title,category,theme,b,moves,why,rating=800,kind="move",target=""):
     try:
@@ -125,6 +126,8 @@ def seed():
                      "The king is checked and has no legal escape.",750+(i%8)*25))
             if len(out)>old:mates+=1
             if mates>=120:break
+    from lessons import guided_positions
+    for item in guided_positions(make,board):add(item)
     return out
 
 def from_lichess(record):
