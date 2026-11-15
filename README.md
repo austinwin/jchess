@@ -30,6 +30,12 @@ All games save moves and state in PostgreSQL and validate legal moves on the bac
 
 **Optional parent-enabled AI coach:** If a parent enables it and provides an encrypted OpenAI API key, the child may select the same adaptive engine **plus AI explanations**. Stockfish still chooses the moves. OpenAI receives the position FEN before the student move, the UCI move, and available engine guidance (no name, username, or account ID), and returns a short coaching note. The parent controls a separate 1–50 explanations/day allowance (UI offers 5, 10, 20, 30, 50). Each attempted explanation uses a quota slot, including failed provider calls. If the API is unavailable, games continue with Stockfish. The limit is **not a dollar spending cap**.
 
+## Coach Hoang: personalized chess mentor
+
+The child has a **Coach Hoang** tab that assembles six personalized chessboard challenges from verified positions, identifies practice priorities only with enough attempt history, gives non-spoiler hints, and explains solved exercises. The lessons work even without an AI key.
+
+Parents can separately authorize optional AI-assisted teaching with a stored encrypted API key and a daily request limit. Stockfish still chooses robot moves and analyzes chess. Parents can view the latest training plan. See [Coach Hoang guide](docs/COACH_HOANG.md).
+
 ## Local development
 
 Requires Python 3.10+, Node 20+ and npm.

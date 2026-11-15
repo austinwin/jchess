@@ -38,3 +38,11 @@
 A `cloud_play` table contains a parent-scoped permission, daily **explanation** budget, UTC day, and attempts used. The count is updated under a database row lock before the provider call to block concurrent quota bypass. Disabling AI or removing the API key also revokes cloud-play permission. The `ai_usage` table retains separate report quotas.
 
 Friend-match invitation codes are created with `secrets.token_urlsafe(32)`, shared in a URL fragment, and only SHA-256 hashes are stored in the `games` table. A leaked invitation is equivalent to sharing the opponent's seat. Friend links expire in seven days, are automatically revoked when the child starts another friend game, and can be revoked immediately using **End game**. Do not share friend invitations publicly.
+
+## Coach Hoang (parent-controlled student coaching)
+
+The coach_access table records explicit parent permission and an independent UTC-day quota. Saving a key alone does not enable student coaching. Before solving, a child can request only an offline, non-spoiler hint. After solving or parent reveal, the child can request an AI explanation.
+
+For training plans the external API receives only aggregate category statistics and metadata about verified exercises. For completed exercises it receives the current FEN, authored teaching note and student attempts from that exercise. No child name, login, hidden solution line or API secret is sent.
+
+The server chooses puzzles before any AI call and ignores any model-suggested chess move. Model responses use structured output with short, bounded strings and a verified fallback. Plan text and selected verified puzzle IDs are retained in coach_plans for linked family members. Requests set store=false, but this does not imply zero provider-side abuse logging.
