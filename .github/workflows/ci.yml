@@ -28,4 +28,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build --tag jchess-smoke .
-      - run: docker run --rm jchess-smoke python -c "import main, lessons; assert len(lessons.LESSONS) >= 14"
+      - run: docker run --rm jchess-smoke python -c "import main, lessons, adaptive, chess; assert len(lessons.LESSONS) >= 14; assert adaptive.engine_path(); b=chess.Board(); m,src=adaptive.play(b, 'medium', 55); assert src == 'stockfish' and m in b.legal_moves"
