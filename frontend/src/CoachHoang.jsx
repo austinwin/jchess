@@ -93,3 +93,26 @@ export function CoachExplain({sessionId,solved,revealed=false,notice}){
    </div>}
  </div>;
 }
+
+export function ParentCoachPreview({childId,notice}){
+ const [plan,setPlan]=useState(null);
+ const [loading,setLoading]=useState(false);
+ useEffect(()=>{
+   if(!childId){setPlan(null);return;}
+   let cancelled=false;setLoading(true);
+   call('/parent/children/'+childId+'/coach').then(data=>{if(!cancelled)setPlan(data.plan)})
+     .catch(e=>{if(!cancelled)notice(e.message)})
+     .finally(()=>{if(!cancelled)setLoading(false)});
+   return ()=>{cancelled=true};
+ },[childId,notice]);
+ if(!childId)return <p className="privacy-note">Add or select a child to view their training sessions.</p>;
+ if(loading)return <p className="privacy-note">Loading Coach Hoang's latest plan…</p>;
+ if(!plan)return <p className="privacy-note">No training plan yet. Your child can open the Coach Hoang tab to prepare the first session.</p>;
+ return <div className="coach-parent-preview">
+  <span className="eyebrow">LATEST TRAINING PLAN</span>
+  <strong>{plan.source==='ai-assisted'?'AI-assisted':'Rules-verified'} · {plan.missions.length} challenges</strong>
+  <p>{plan.weakness_note}</p>
+  <div className="coach-parent-tags">{plan.missions.map(x=><span key={x.puzzle_id}>{ICONS[x.category]||'♞'} {x.category}</span>)}</div>
+  <small>Selected from a legally checked exercise library. The student's account never sees your API key.</small>
+ </div>;
+}
