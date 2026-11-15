@@ -5,7 +5,6 @@ import base64
 import hashlib
 import json
 import os
-import re
 import secrets
 import uuid
 from datetime import timedelta
@@ -16,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-from bot import choose_move
+from adaptive import learner_profile,play as engine_play,evaluate_student_move,review_game
 from db import Game, Family, CloudPlay, AIConfig, digest, now
 
 
@@ -71,18 +70,27 @@ def _apply(g,uci,actor,db):
     except ValueError:raise HTTPException(400,"Invalid move")
     if move not in board.legal_moves:raise HTTPException(400,"This move is not legal")
     hist=json.loads(g.moves)
+    before=board.copy(stack=True) if g.mode=="bot" and g.provider=="cloud" else None
     _record(board,hist,move,actor)
     _finish(board,g)
-    if g.mode=="bot" and g.status=="active":
-        source="builtin"
-        reply=None
-        if g.provider=="cloud":
-            reply=_cloud_reply(board,g,db)
-            if reply:source="cloud"
-            else:source="fallback"
-        if reply is None:reply=choose_move(board,g.level)
-        if reply is not None:_record(board,hist,reply,source)
-        _finish(board,g)
+    if g.mode=="bot":
+        profile=learner_profile(db,g.child_id)
+        if g.status=="active":
+            reply,source=engine_play(board,g.level,profile["practice_score"])
+            if reply is not None:
+                _record(board,hist,reply,source)
+                hist[-1]["skill_band"]=profile["band"]
+            _finish(board,g)
+        # Cloud AI explains the child's move; only Stockfish or the free
+        # validated fallback may select the opponent's chess move.
+        if before is not None:
+            assessment=evaluate_student_move(before,move)
+            note=_cloud_coach(before,move,assessment,g,db)
+            if note:
+                for item in reversed(hist):
+                    if item["actor"]=="white":
+                        item["tip"]=note
+                        break
     g.fen=board.fen()
     g.moves=json.dumps(hist)
     g.version+=1
@@ -97,10 +105,10 @@ def _cloud_permission(db,parent_id):
     remaining=(permission.daily_limit-(permission.used if permission.day==day else 0)) if permission else 0
     return bool(settings and settings.enabled and settings.key_cipher and permission and permission.enabled and remaining>0),max(0,remaining)
 
-def _cloud_reply(board,g,db):
+def _cloud_coach(before,move,assessment,g,db):
+    """Optional parent-authorized commentary only; the LLM never chooses a move."""
     allowed,_=_cloud_permission(db,g.parent_id)
     if not allowed:return None
-    # The cap is checked under a database row lock, before any provider request.
     permission=db.scalar(select(CloudPlay).where(CloudPlay.parent_id==g.parent_id).with_for_update())
     today=now().date().isoformat()
     if permission.day!=today:permission.day=today;permission.used=0
@@ -109,29 +117,31 @@ def _cloud_reply(board,g,db):
     settings=db.get(AIConfig,g.parent_id)
     db.flush()
     try:
-        # Import only here: the key never enters the web bundle or game response.
         raw=os.getenv("AI_ENCRYPTION_KEY","")
         if not raw:return None
         fernet=Fernet(base64.urlsafe_b64encode(hashlib.sha256(raw.encode()).digest()))
         key=fernet.decrypt(settings.key_cipher.encode()).decode()
-        legal=[m.uci() for m in board.legal_moves]
-        instructions={"easy":"Choose varied, simple moves; allow occasional mistakes.",
-                      "medium":"Prefer a safe tactical move while keeping the game fun.",
-                      "hard":"Look for strong tactics and avoid dropping material."}
+        summary={"position_before":before.fen(),"student_move":move.uci(),
+                 "engine_best_move":assessment.get("best") if assessment else None,
+                 "evaluation_loss_cp":assessment.get("loss_cp") if assessment else None,
+                 "engine_guidance":assessment.get("guidance") if assessment else None}
         with httpx.Client(timeout=10) as client:
             r=client.post("https://api.openai.com/v1/chat/completions",
-              headers={"Authorization":"Bearer "+key},
-              json={"model":"gpt-4.1-mini","max_tokens":40,"temperature":0.25,"store":False,
-                    "messages":[{"role":"system","content":"You play Black in a chess game. Return exactly one legal UCI move from the list and nothing else. "+instructions[g.level]},
-                                {"role":"user","content":"FEN: "+board.fen()+"\nLegal moves: "+", ".join(legal)}]})
+                headers={"Authorization":"Bearer "+key},
+                json={"model":"gpt-4.1-mini","max_tokens":110,"temperature":0.3,"store":False,
+                     "messages":[{"role":"system","content":
+                        "You are an encouraging chess tutor for an elementary student. "
+                        "The provided chess engine is authoritative; do not claim to have run an engine or invent precise advantages. "
+                        "Give at most two short sentences with one specific thinking habit. "
+                        "Avoid grades, identities, personal labels or pressure. "
+                        "Acknowledge if engine evaluation is unavailable."},
+                         {"role":"user","content":json.dumps(summary)}]})
             r.raise_for_status()
-            answer=str(r.json()["choices"][0]["message"]["content"]).strip().lower()
-        match=re.fullmatch(r"([a-h][1-8])([a-h][1-8])([qrbn])?",answer)
-        if match and answer in legal:return chess.Move.from_uci(answer)
+            return str(r.json()["choices"][0]["message"]["content"]).strip()[:320] or None
     except Exception:
-        # Do not log API key or upstream error body. Builtin bot is always available.
-        pass
-    return None
+        # No upstream text or secrets logged; chess continues free.
+        return None
+
 
 def setup_games(app,session,child,parent):
     # Each FastAPI application gets its own router (no duplicated routes on import).
@@ -142,7 +152,12 @@ def setup_games(app,session,child,parent):
         pid=db.scalar(select(Family.parent_id).where(Family.child_id==u.id))
         allowed,remaining=_cloud_permission(db,pid) if pid else (False,0)
         return {"offline_available":True,"cloud_available":allowed,"cloud_moves_remaining":remaining,
-                "parent_available":bool(pid)}
+                "parent_available":bool(pid),"profile":learner_profile(db,u.id),
+                "cloud_purpose":"Coaching explanations; the adaptive chess engine chooses moves."}
+
+    @router.get("/child/game/profile")
+    def profile(db:Session=Depends(session),u=Depends(child)):
+        return learner_profile(db,u.id)
 
     @router.post("/child/game/start")
     def start(data:StartGame,db:Session=Depends(session),u=Depends(child)):
@@ -167,6 +182,13 @@ def setup_games(app,session,child,parent):
         result=game_info(g)
         if token:result["invite_token"]=token
         return result
+
+    @router.get("/child/game/review")
+    def review(game_id:str,db:Session=Depends(session),u=Depends(child)):
+        g=db.get(Game,game_id)
+        if not g or g.child_id!=u.id:raise HTTPException(404,"Game not found")
+        if g.mode!="bot":raise HTTPException(400,"Review is available for robot games")
+        return review_game(g)
 
     @router.post("/child/game/close")
     def close_game(data:GameId,db:Session=Depends(session),u=Depends(child)):
@@ -196,6 +218,13 @@ def setup_games(app,session,child,parent):
         if not link:raise HTTPException(404,"Child not found")
         g=db.scalar(select(Game).where(Game.child_id==child_id).order_by(Game.created_at.desc(),Game.id.desc()).limit(1))
         return game_info(g)
+
+    @router.get("/parent/game/review")
+    def parent_game_review(game_id:str,db:Session=Depends(session),u=Depends(parent)):
+        g=db.get(Game,game_id)
+        if not g or not db.get(Family,(u.id,g.child_id)):raise HTTPException(404,"Game not found")
+        if g.mode!="bot":raise HTTPException(400,"Review is available for robot games")
+        return review_game(g)
 
     @router.post("/parent/game/move")
     def parent_game_move(data:GameMove,db:Session=Depends(session),u=Depends(parent)):
