@@ -127,10 +127,17 @@ def _plan(db,cid):
     desired=[weakest or "tactics","safety","strategy","endgames","tactics","thinking"]
     attempted=set(db.scalars(select(Attempt.puzzle_id).where(Attempt.child_id==cid)).all())
     chosen=[];used=set()
+    missed=db.scalars(select(Attempt.puzzle_id).where(Attempt.child_id==cid,Attempt.correct.is_(False))
+        .order_by(Attempt.id.desc()).limit(30)).all()
     rng=random.Random(now().strftime("%Y%m%d")+":"+str(cid)+":"+uuid.uuid4().hex[:6])
     for i,cat in enumerate(desired):
         candidates=db.scalars(select(Puzzle).where(Puzzle.category==cat)).all()
         if not candidates:continue
+        reviewing=False
+        if i==len(desired)-1:
+            repeated=next((db.get(Puzzle,pid) for pid in missed if pid not in used and db.get(Puzzle,pid)),None)
+            if repeated:
+                candidates=[repeated];cat=repeated.category;reviewing=True
         target=650+min(520,sum(v["attempts"] for v in stats.values())*9)
         unused=[p for p in candidates if p.id not in attempted and p.id not in used]
         pool=unused or [p for p in candidates if p.id not in used]
@@ -142,7 +149,8 @@ def _plan(db,cid):
         chosen.append({"number":i+1,"puzzle_id":pick.id,
             "title":pick.title,"category":cat,"theme":pick.theme,
             "rating":pick.rating,"duration_minutes":3 if pick.kind=="spot" else 5,
-            "goal":lesson["why"] if lesson else CATEGORIES[cat]["description"],
+            "goal":("Review a position that was tricky before, then try to remember the pattern." if reviewing else lesson["why"] if lesson else CATEGORIES[cat]["description"]),
+            "review":reviewing,
             "thinking_tip":THEME_HINTS.get(pick.theme,"Before moving, look for checks, captures and threats.")})
     if not chosen:raise HTTPException(404,"No verified practice positions available")
     weakest_note=("Your recent results suggest more practice with "+CATEGORIES[weakest]["label"].lower()+". "
@@ -158,9 +166,13 @@ def _plan(db,cid):
         "tip":"Take time to explain one reason for each choice.",
         "missions":chosen}
 
-def _plan_view(row):
+def _plan_view(db,row):
     if not row:return None
     body=json.loads(row.body)
+    done=set(db.scalars(select(Attempt.puzzle_id).where(
+        Attempt.child_id==row.child_id,Attempt.at>=row.created_at)).all())
+    body["missions"]=[{**m,"completed":m["puzzle_id"] in done}
+                      for m in body.get("missions",[])]
     return {"id":row.id,**body}
 
 def setup_coach(app,session,child,parent,training_info):
@@ -173,7 +185,7 @@ def setup_coach(app,session,child,parent,training_info):
         latest=db.scalar(select(CoachPlan).where(CoachPlan.child_id==u.id)
             .order_by(CoachPlan.created_at.desc(),CoachPlan.id.desc()).limit(1))
         return {"coach":"Hoang","ai_available":enabled,"remaining_today":remaining,
-                "daily_limit":limit,"plan":_plan_view(latest)}
+                "daily_limit":limit,"plan":_plan_view(db,latest)}
 
     @router.post("/child/coach/plan")
     def new_plan(db:Session=Depends(session),u=Depends(child)):
@@ -199,7 +211,7 @@ def setup_coach(app,session,child,parent,training_info):
         row=CoachPlan(id=uuid.uuid4().hex,child_id=u.id,parent_id=pid,
                       body=json.dumps(plan,ensure_ascii=False))
         db.add(row);db.commit()
-        return _plan_view(row)
+        return _plan_view(db,row)
 
     @router.post("/child/coach/mission/start")
     def start_mission(data:MissionStart,db:Session=Depends(session),u=Depends(child)):
@@ -255,6 +267,6 @@ def setup_coach(app,session,child,parent,training_info):
         if not db.get(Family,(u.id,child_id)):raise HTTPException(404,"Child not found")
         row=db.scalar(select(CoachPlan).where(CoachPlan.child_id==child_id)
             .order_by(CoachPlan.created_at.desc(),CoachPlan.id.desc()).limit(1))
-        return {"coach":"Hoang","plan":_plan_view(row)}
+        return {"coach":"Hoang","plan":_plan_view(db,row)}
 
     app.include_router(router)
