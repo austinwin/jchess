@@ -64,8 +64,8 @@ export function CoachHoang({onMission,notice}){
     </div>
     <div className="coach-missions">{plan.missions.map(m=><div className="coach-mission" key={m.puzzle_id}>
       <div className="coach-mission-icon" style={{background:COLORS[m.category]||'#e9edff'}}>{ICONS[m.category]||'♞'}</div>
-      <div className="coach-mission-content"><span className="eyebrow">MISSION {m.number} · {m.category.toUpperCase()} · {m.duration_minutes} MIN</span><h3>{m.title}</h3><p>{m.goal}</p><small><Lightbulb size={14}/>{m.thinking_tip}</small></div>
-      <button className="coach-play" disabled={!!activeMission} onClick={()=>start(m)}>{activeMission===m.puzzle_id?'Loading…':<>Train <Play size={16}/></>}</button>
+      <div className="coach-mission-content"><span className="eyebrow">MISSION {m.number} · {m.category.toUpperCase()} · {m.duration_minutes} MIN {m.review?'· REVIEW':''} {m.completed?'· COMPLETED ✓':''}</span><h3>{m.title}</h3><p>{m.goal}</p><small><Lightbulb size={14}/>{m.thinking_tip}</small></div>
+      <button className="coach-play" disabled={!!activeMission} onClick={()=>start(m)}>{activeMission===m.puzzle_id?'Loading…':<>{m.completed?'Practice again':'Train'} <Play size={16}/></>}</button>
     </div>)}</div>
     <p className="coach-disclaimer"><ShieldCheck size={17}/> The exercises come from JChess's rules-validated library. The coach never invents a solution or changes chess rules. A performance pattern only becomes a possible weak area after enough attempts.</p>
     </>}
