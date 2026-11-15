@@ -256,7 +256,7 @@ def puzzle_move(data:MoveRequest,db:Session=Depends(session),u=Depends(child)):
     if m not in b.legal_moves:raise HTTPException(400,"That move is not legal")
     line=json.loads(p.solution);correct=s.step<len(line) and data.uci==line[s.step]
     logs=json.loads(s.moves)
-    logs.append(dict(move=data.uci,correct=correct,auto=False,at=now().isoformat()+"Z"))
+    logs.append(dict(move=data.uci,correct=correct if p.category!="strategy" else (True if correct else None),model_move=p.category=="strategy",auto=False,at=now().isoformat()+"Z"))
     if correct:
         b.push(m);s.step+=1
         if s.step<len(line):
