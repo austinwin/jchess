@@ -70,22 +70,23 @@ function MatchBoard({game,role,onMove,busy}){
   customLightSquareStyle={{backgroundColor:'#f1f1e5'}} customDarkSquareStyle={{backgroundColor:'#84aaa5'}}
   customSquareStyles={selected?{[selected]:{backgroundColor:'#fedb68'}}:{}}/></div>;
 }
-export function GameRoom({game,role='child',onMove,onNew,invite,busy=false}){
+export function GameRoom({game,role='child',onMove,onNew,onEnd,invite,busy=false}){
  const [copied,setCopied]=useState(false);
  if(!game)return <div className="gp-empty"><span>♟️</span><h2>No game started</h2><p>Choose a game mode to begin.</p>{onNew&&<button onClick={onNew}>Choose a game</button>}</div>;
  const title=game.mode==='bot'?(game.provider==='cloud'?'Cloud AI robot':'Built-in robot')+' · '+game.level:game.mode==='parent'?'Play with parent':game.mode==='friend'?'Play with a friend':'Pass and play';
- const message=game.status==='active'?(role==='child'?(game.mode==='local'?'Pass the board to '+(game.turn==='white'?'White':'Black'):game.turn==='white'?'Your move!':'Waiting for your opponent…'):game.turn==='black'?'Your move!':'Waiting for White…'):
-   game.status==='draw'?'Game drawn 🤝':game.status==='white_wins'?'White wins! 🏆':'Black wins! 🏆';
+ const message=game.status==='active'?(role==='child'?(game.mode==='local'?'Pass the board to '+(game.turn==='white'?'White':'Black'):game.turn==='white'?'Your move!':'Waiting for your opponent…'):role==='observer'?'Watching the game…':game.turn==='black'?'Your move!':'Waiting for White…'):
+   game.status==='draw'?'Game drawn 🤝':game.status==='closed'?'Game ended':game.status==='white_wins'?'White wins! 🏆':'Black wins! 🏆';
  const inviteLink=invite?window.location.origin+'/?guest=1#join='+encodeURIComponent(invite):'';
  const copy=async()=>{try{await navigator.clipboard.writeText(inviteLink);setCopied(true)}catch{setCopied(false)}};
  return <section className="gp-room">
   <div className="gp-room-head"><div><span className="eyebrow">CHESS PLAYROOM</span><h1>{title}</h1><p>{game.status==='active'?'Think before moving. Checks, captures and threats!':'You finished the game. Time for a new challenge?'}</p></div><span className={'gp-status '+(game.status==='active'?'playing':'finished')}><span/> {game.status==='active'?'Game in progress':'Game over'}</span></div>
   <div className="gp-room-grid"><div className="panel gp-board-panel"><div className="gp-turn"><span>{role==='child'?'♙ You play White':role==='parent'?'♟ You play Black':role==='friend'?'♟ Friend plays Black':'♟ Watching Black'}</span><strong>{busy?'Moving…':message}</strong></div><MatchBoard game={game} role={role} onMove={onMove} busy={busy}/><div className="gp-under-board"><span>{game.turn==='white'?'♔ White to move':'♚ Black to move'}</span><small>{game.moves.length} half-moves</small></div></div>
   <aside className="gp-aside">
-   {role==='child'&&game.mode==='friend'&&<div className="panel gp-share"><span className="eyebrow">INVITE A FRIEND</span><h2>Send your game link</h2>{inviteLink?<><p>Send this private link to your friend. They can play Black without making an account.</p><input aria-label="Private friend invitation" value={inviteLink} readOnly onFocus={e=>e.target.select()}/><button onClick={copy}><Copy size={16}/> {copied?'Copied!':'Copy invitation'}</button></>:<p>The invite link was available when this game started. Use the same browser session, or create a new friend game for a new link.</p>}</div>}
+   {role==='child'&&game.mode==='friend'&&<div className="panel gp-share"><span className="eyebrow">INVITE A FRIEND</span><h2>Send your game link</h2>{inviteLink&&game.invite_open?<><p>Send this private link to your friend. They can play Black without making an account.</p><input aria-label="Private friend invitation" value={inviteLink} readOnly onFocus={e=>e.target.select()}/><button onClick={copy}><Copy size={16}/> {copied?'Copied!':'Copy invitation'}</button></>:<p>The invite link was available when this game started. Use the same browser session, or create a new friend game for a new link.</p>}</div>}
    {role==='child'&&game.mode==='parent'&&<div className="panel gp-share"><span className="eyebrow">FAMILY GAME</span><h2>Waiting for your parent</h2><p>Your parent can open their account and choose <b>Play together</b>. Moves appear on both screens.</p></div>}
    <div className="panel gp-history"><span className="eyebrow">MOVE HISTORY</span><h2>Every move counts</h2>{game.moves.length?<div className="gp-moves">{game.moves.slice(-16).map((move,i)=><div key={i}><span>{move.color==='white'?'♙':'♟'}</span><strong>{move.san}</strong><small>{move.actor==='cloud'?'Cloud AI':move.actor==='builtin'?'Robot':move.actor==='fallback'?'Free bot fallback':move.actor==='white'?'White':'Black'}</small></div>)}</div>:<p>It's your first move. Let's begin!</p>}</div>
    {onNew&&<button className="gp-new" onClick={onNew}><RotateCcw size={17}/> Start another game</button>}
+   {role==='child'&&game.status==='active'&&onEnd&&<button className="gp-end" disabled={busy} onClick={onEnd}>End game {game.mode==='friend'?'& revoke invite':''}</button>}
    {game.provider==='cloud'&&<p className="gp-note"><ShieldCheck size={17}/> Cloud moves use the parent's allowance. If unavailable, the free robot takes over.</p>}
   </aside></div>
  </section>;

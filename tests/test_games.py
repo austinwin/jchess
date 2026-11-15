@@ -78,6 +78,12 @@ def test_robot_and_human_games():
         guest=friend.post("/api/guest/game/move",json={"token":token,"uci":"e7e5"})
         assert guest.status_code==200,guest.text
         check_game(guest.json())
+        closed=kid.post("/api/child/game/close",json={"game_id":friend_game["id"]})
+        assert closed.status_code==200 and closed.json()["status"]=="closed"
+        assert not closed.json()["invite_open"]
+        assert friend.post("/api/guest/game/current",json={"token":token}).status_code==404
+        second_friend=kid.post("/api/child/game/start",json={"mode":"friend"}).json()
+        assert second_friend["invite_token"]!=token
 
 def test_parent_controlled_cloud_game_with_quota(monkeypatch):
     calls=[]
