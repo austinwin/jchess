@@ -194,7 +194,7 @@ def setup_coach(app,session,child,parent,training_info):
                  "exercise_themes":[{"category":m["category"],"theme":m["theme"],
                                      "goal":m["goal"]} for m in plan["missions"]]},360)
             if data and len(data)==3:
-                plan.update({"source":"ai-assisted",**data})
+                plan.update({"source":"ai-assisted","message":data["opening"],"focus":data["focus"],"tip":data["tip"]})
         row=CoachPlan(id=uuid.uuid4().hex,child_id=u.id,parent_id=pid,
                       body=json.dumps(plan,ensure_ascii=False))
         db.add(row);db.commit()

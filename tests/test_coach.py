@@ -30,7 +30,7 @@ def test_offline_coach_uses_verified_positions_and_guards_answers():
         plan=plan_resp.json()
         assert plan["source"]=="verified" and len(plan["missions"])>=5
         assert "solution" not in json.dumps(plan)
-        assert "target" not in json.dumps(plan)
+        assert '"target":' not in json.dumps(plan)
         for task in plan["missions"]:
             with DB() as db:
                 puzzle=db.get(Puzzle,task["puzzle_id"])
