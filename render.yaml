@@ -14,10 +14,10 @@ services:
         value: "false"
       - key: ADMIN_USERNAME
         value: hoang
-      - key: BOOTSTRAP_ADMIN_PASSWORD
-        sync: false
-      - key: BOOTSTRAP_CHILD_PASSWORD
-        sync: false
+      - key: BOOTSTRAP_ADMIN_HASH
+        value: "pbkdf2:250000:058f361b8b5c0410727207061156cfd4:9daf1af3f73a162cb15dbd2e54c266b13308a9982ccdd4516bef2f83be38cacd"
+      - key: BOOTSTRAP_CHILD_HASH
+        value: "pbkdf2:250000:a0ba8cb1cb3bf7c1164ec2424269d006:e2bf9e5cb01781345cd3c6ee0c4c9c1a9ddcc2494c354c6edfa8d88c16e9cf2a"
       - key: AI_ENCRYPTION_KEY
         generateValue: true
 databases:

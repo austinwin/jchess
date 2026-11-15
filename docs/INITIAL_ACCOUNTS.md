@@ -1,10 +1,16 @@
-# Initial accounts and security
+# Initial family access
 
-In production, the app provisions **two family-linked accounts once** when both bootstrap passwords are present:
+The Render Blueprint provisions these two linked users when the database is initialized for the first time.
 
-- Parent username: `hoang`; password: `BOOTSTRAP_ADMIN_PASSWORD`
-- Child username: `justin`; password: `BOOTSTRAP_CHILD_PASSWORD`
+| Role | Username | Temporary password |
+| --- | --- | --- |
+| Parent | `hoang` | Provided privately by the deploy operator |
+| Child | `justin` | Provided privately by the deploy operator |
 
-Each password must be at least 12 characters. **Both accounts must change the temporary password at first login**. Public deployment does not allow `hoang/hoang` or `justin/justin`. No credentials are embedded in GitHub or the frontend bundle.
+Both are required to change passwords before entering the academy. The Render config contains **only salted PBKDF2 password hashes**, never the plaintext passwords. Passwords are not included in this file.
 
-Bootstrap credentials are not re-applied on restarts and will not overwrite a changed password. Once both accounts are verified, you can remove the bootstrap password environment variables from the Render service. The user and family link remain in PostgreSQL.
+Existing users are not overwritten during restarts. Once first login and password changes have been confirmed, remove the `BOOTSTRAP_ADMIN_HASH` and `BOOTSTRAP_CHILD_HASH` environment variables from Render so that future fresh databases do not reuse temporary account passwords.
+
+Local development still permits `DEMO_USERS=true` with `hoang/hoang` and `justin/justin`. The Render service always disables that switch.
+
+Render free PostgreSQL has limited lifetime. Upgrade or migrate before its expiry; export progress regularly.
