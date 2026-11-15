@@ -59,12 +59,12 @@ def _finish(board,g):
 def _apply(g,uci,actor,db):
     if g.status!="active":raise HTTPException(409,"This game has ended. Start a new game.")
     board=_board(g)
-    try:move=chess.Move.from_uci(uci)
-    except ValueError:raise HTTPException(400,"Invalid move")
-    if move not in board.legal_moves:raise HTTPException(400,"This move is not legal")
     expected="white" if board.turn else "black"
     if g.mode!="local" and expected!=actor:
         raise HTTPException(409,"Wait for your turn")
+    try:move=chess.Move.from_uci(uci)
+    except ValueError:raise HTTPException(400,"Invalid move")
+    if move not in board.legal_moves:raise HTTPException(400,"This move is not legal")
     hist=json.loads(g.moves)
     _record(board,hist,move,actor)
     _finish(board,g)
