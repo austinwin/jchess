@@ -70,3 +70,22 @@
 
 .gp-end{align-self:flex-start;background:none;color:#9a3841;border:1px solid #eccdd1;border-radius:12px;padding:11px 16px;cursor:pointer;font:inherit;font-size:.84rem}
 .gp-end:disabled{opacity:.5}
+
+/* Personalized chess coaching and engine-based review */
+.gp-adapt-desc{font-size:.88rem;line-height:1.55;color:#64718b;max-width:640px}
+.gp-profile{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#f4f0ff;border:1px solid #e1d8ff;border-radius:16px;padding:14px 16px;margin:18px 0}
+.gp-profile strong{color:#4f4096;font-size:.93rem}
+.gp-profile small{display:block;color:#656a85;margin-top:5px;font-size:.77rem}
+.gp-profile button{background:#654ec2;border:0;color:#fff;border-radius:11px;padding:10px 14px;font:inherit;font-size:.82rem;font-weight:750;cursor:pointer}
+.gp-coach-note{background:#fffaf0;border:1px solid #f3dfb9}
+.gp-coach-note h2{color:#6b4d27}
+.gp-coach-note p{color:#544837;font-size:.93rem}
+.gp-coach-note small{color:#8e816b}
+.gp-review{border:1px solid #ddd8ff;background:#fcfbff}
+.gp-review-button{padding:12px 18px;border:0;border-radius:11px;background:#6554ba;color:#fff;cursor:pointer;font:inherit;font-weight:750}
+.gp-review-button:disabled{opacity:.55;cursor:wait}
+.gp-review-results{margin-top:18px;display:flex;flex-direction:column;gap:12px}
+.gp-review-moment{padding:13px;background:#f2f0ff;border-radius:11px}
+.gp-review-moment strong{color:#554495}
+.gp-review-moment p{margin:7px 0;color:#4a516a}
+.gp-review-moment small{color:#6b7293;line-height:1.45}

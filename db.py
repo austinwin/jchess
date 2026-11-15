@@ -71,6 +71,24 @@ class AIUsage(Base):
     requests:Mapped[int]=mapped_column(Integer,default=0)
     daily_limit:Mapped[int]=mapped_column(Integer,default=3)
 
+class CoachAccess(Base):
+    """Explicit parental permission for student-facing AI coaching, with hard daily quota."""
+    __tablename__="coach_access"
+    parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),primary_key=True)
+    enabled:Mapped[bool]=mapped_column(Boolean,default=False)
+    daily_limit:Mapped[int]=mapped_column(Integer,default=3)
+    day:Mapped[str]=mapped_column(String(10),default="")
+    used:Mapped[int]=mapped_column(Integer,default=0)
+
+class CoachPlan(Base):
+    """Validated puzzle IDs and training directions, not model-provided answer keys."""
+    __tablename__="coach_plans"
+    id:Mapped[str]=mapped_column(String(36),primary_key=True)
+    child_id:Mapped[int]=mapped_column(ForeignKey("users.id"),index=True)
+    parent_id:Mapped[int]=mapped_column(ForeignKey("users.id"),index=True)
+    body:Mapped[str]=mapped_column(Text)
+    created_at:Mapped[datetime]=mapped_column(DateTime,default=now)
+
 class CloudPlay(Base):
     """Parent-only permission and an independent daily cloud-move budget."""
     __tablename__="cloud_play"

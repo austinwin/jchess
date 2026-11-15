@@ -25,14 +25,24 @@
 - Calls per day are controlled, but token-based cost ceilings are **not** enforced in JChess; use project-level billing limits and alerts.
 - The encryption secret protects the database backup from a standalone leak, but anyone with access to both the production database and the Render encryption key could still decrypt the stored keys. Restrict Render project access.
 - An authorized parent's browser can create requests, so protect the parent login and change bootstrap passwords promptly.
-- Automatic provider coaching and any chat for children are intentionally disabled. AI is an **optional parent tool**, never used to validate chess moves.
+- AI coaching notes during games are enabled only after the parent authorizes it and supplies a key. They are short, displayed in the child match, and can still be inaccurate; Stockfish remains the chess authority. There is no open-ended AI chat for children.
 
-## Cloud robot games
+## Adaptive robot and optional coached games
 
-A parent may opt in separately to allowing **cloud robot moves** from the child game screen. This is not enabled by simply saving an API key. Child accounts only receive a boolean `cloud_available` plus a remaining-move count; they cannot fetch the key, modify permission, or bypass the 1–50-request daily cap.
+**Chess decisions:** Render installs the free Stockfish chess engine. The application adjusts its search strength within the child's chosen Easy, Medium or Hard tier using a practice indicator derived from recent puzzle performance and finished bot games. The indicator is not a calibrated chess Elo. If the native chess engine fails, the rule-checked built-in Python bot handles the move. All opponent moves are checked by python-chess before acceptance.
 
-Each cloud request contains the current FEN position, a list of legal UCI moves, and a difficulty instruction. No child's name, email, username, or account ID is transmitted. The language model's move is accepted **only if** python-chess confirms it is legal; otherwise the local bot responds. A cloud request costs API credits and can be slower than the built-in bot.
+**Learning feedback:** Without an API key, a signed-in child or linked parent can request a Stockfish review of the child's recent white moves. It returns up to three moments, approximate evaluation swings, and suggested practice. These are educational estimates, not definitive judgments.
 
-A `cloud_play` table contains a parent-scoped permission, daily budget, UTC day, and attempts used. The count is updated under a database row lock before the provider call to block concurrent quota bypass. Disabling AI or removing the API key also revokes cloud-play permission. The `ai_usage` table retains separate report quotas.
+**OpenAI:** A parent may separately permit brief AI coaching explanations after student moves. This setting is independent of the free chess engine and remains opt-in. Child accounts receive only a boolean `cloud_available` and a remaining-explanation count, not the key. The language model **never chooses chess moves**. Only the current FEN before the student's move, their UCI move, and available chess-engine evaluation and recommendation are transmitted. No student name, username or account ID is sent. The saved key stays encrypted in PostgreSQL and never reaches the frontend. Each attempted coaching request consumes one of 1–50 daily parent-managed explanation credits, separate from AI learning-report limits. Failure results in no explanation, not a broken game.
+
+A `cloud_play` table contains a parent-scoped permission, daily **explanation** budget, UTC day, and attempts used. The count is updated under a database row lock before the provider call to block concurrent quota bypass. Disabling AI or removing the API key also revokes cloud-play permission. The `ai_usage` table retains separate report quotas.
 
 Friend-match invitation codes are created with `secrets.token_urlsafe(32)`, shared in a URL fragment, and only SHA-256 hashes are stored in the `games` table. A leaked invitation is equivalent to sharing the opponent's seat. Friend links expire in seven days, are automatically revoked when the child starts another friend game, and can be revoked immediately using **End game**. Do not share friend invitations publicly.
+
+## Coach Hoang (parent-controlled student coaching)
+
+The coach_access table records explicit parent permission and an independent UTC-day quota. Saving a key alone does not enable student coaching. Before solving, a child can request only an offline, non-spoiler hint. After solving or parent reveal, the child can request an AI explanation.
+
+For training plans the external API receives only aggregate category statistics and metadata about verified exercises. For completed exercises it receives the current FEN, authored teaching note and student attempts from that exercise. No child name, login, hidden solution line or API secret is sent.
+
+The server chooses puzzles before any AI call and ignores any model-suggested chess move. Model responses use structured output with short, bounded strings and a verified fallback. Plan text and selected verified puzzle IDs are retained in coach_plans for linked family members. Requests set store=false, but this does not imply zero provider-side abuse logging.
