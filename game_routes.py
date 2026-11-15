@@ -1,11 +1,15 @@
 """Family-scoped online games and a free 3-level chess bot.
 No guest registration; the unguessable friend invite is an opponent-seat capability.
 """
+import base64
+import hashlib
 import json
+import os
 import re
 import secrets
 import uuid
-from datetime import datetime
+from datetime import timedelta
+from cryptography.fernet import Fernet
 import chess
 import httpx
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,15 +19,16 @@ from sqlalchemy.orm import Session
 from bot import choose_move
 from db import Game, Family, CloudPlay, AIConfig, digest, now
 
-router=APIRouter(prefix="/api",tags=["games"])
 
 class StartGame(BaseModel):
     mode:str=Field(pattern="^(bot|local|parent|friend)$")
     level:str=Field(default="easy",pattern="^(easy|medium|hard)$")
     provider:str=Field(default="builtin",pattern="^(builtin|cloud)$")
 
-class GameMove(BaseModel):
+class GameId(BaseModel):
     game_id:str=Field(min_length=32,max_length=36)
+
+class GameMove(GameId):
     uci:str=Field(min_length=4,max_length=5)
 
 class FriendCode(BaseModel):
@@ -37,7 +42,7 @@ def game_info(g):
     return {"id":g.id,"mode":g.mode,"provider":g.provider,"level":g.level,
             "fen":g.fen,"moves":json.loads(g.moves),"status":g.status,
             "turn":"white" if chess.Board(g.fen).turn else "black",
-            "version":g.version,"updated_at":g.updated_at.isoformat()+"Z"}
+            "version":g.version,"updated_at":g.updated_at.isoformat()+"Z","invite_open":bool(g.invite_hash)}
 
 def _board(g):
     # Keep complete history for 3-fold-repetition and the 50-move rule.
@@ -105,8 +110,10 @@ def _cloud_reply(board,g,db):
     db.flush()
     try:
         # Import only here: the key never enters the web bundle or game response.
-        from main import cipher
-        key=cipher().decrypt(settings.key_cipher.encode()).decode()
+        raw=os.getenv("AI_ENCRYPTION_KEY","")
+        if not raw:return None
+        fernet=Fernet(base64.urlsafe_b64encode(hashlib.sha256(raw.encode()).digest()))
+        key=fernet.decrypt(settings.key_cipher.encode()).decode()
         legal=[m.uci() for m in board.legal_moves]
         instructions={"easy":"Choose varied, simple moves; allow occasional mistakes.",
                       "medium":"Prefer a safe tactical move while keeping the game fun.",
@@ -127,6 +134,9 @@ def _cloud_reply(board,g,db):
     return None
 
 def setup_games(app,session,child,parent):
+    # Each FastAPI application gets its own router (no duplicated routes on import).
+    router=APIRouter(prefix="/api",tags=["games"])
+
     @router.get("/child/game/options")
     def game_options(db:Session=Depends(session),u=Depends(child)):
         pid=db.scalar(select(Family.parent_id).where(Family.child_id==u.id))
@@ -141,6 +151,13 @@ def setup_games(app,session,child,parent):
         if data.provider=="cloud":
             available,_=_cloud_permission(db,pid)
             if data.mode!="bot" or not available:raise HTTPException(403,"Parent has not enabled cloud AI play")
+        # Only the latest invite is valid. Ending an older friend game also
+        # prevents forgotten links from retaining access to its board.
+        old=db.scalars(select(Game).where(Game.child_id==u.id,Game.mode=="friend",Game.invite_hash.isnot(None))).all()
+        for previous in old:
+            previous.invite_hash=None
+            if previous.status=="active":previous.status="closed"
+            previous.version+=1
         token=secrets.token_urlsafe(32) if data.mode=="friend" else None
         g=Game(id=uuid.uuid4().hex,child_id=u.id,parent_id=pid,mode=data.mode,
                provider=data.provider if data.mode=="bot" else "builtin",
@@ -150,6 +167,15 @@ def setup_games(app,session,child,parent):
         result=game_info(g)
         if token:result["invite_token"]=token
         return result
+
+    @router.post("/child/game/close")
+    def close_game(data:GameId,db:Session=Depends(session),u=Depends(child)):
+        g=db.scalar(select(Game).where(Game.id==data.game_id,Game.child_id==u.id).with_for_update())
+        if not g:raise HTTPException(404,"Game not found")
+        if g.status=="active":g.status="closed"
+        g.invite_hash=None
+        g.version+=1;g.updated_at=now();db.commit()
+        return game_info(g)
 
     @router.get("/child/game/current")
     def child_current_game(db:Session=Depends(session),u=Depends(child)):
@@ -182,12 +208,14 @@ def setup_games(app,session,child,parent):
     def guest_current(data:FriendCode,db:Session=Depends(session)):
         g=db.scalar(select(Game).where(Game.mode=="friend",Game.invite_hash==digest(data.token)))
         if not g:raise HTTPException(404,"Invite not found")
+        if now()-g.created_at>timedelta(days=7):raise HTTPException(410,"Invite expired")
         return game_info(g)
 
     @router.post("/guest/game/move")
     def guest_move(data:FriendMove,db:Session=Depends(session)):
         g=db.scalar(select(Game).where(Game.mode=="friend",Game.invite_hash==digest(data.token)).with_for_update())
         if not g:raise HTTPException(404,"Invite not found")
+        if now()-g.created_at>timedelta(days=7):raise HTTPException(410,"Invite expired")
         return _apply(g,data.uci,"black",db)
 
     app.include_router(router)
