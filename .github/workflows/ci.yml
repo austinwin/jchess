@@ -22,3 +22,10 @@ jobs:
           node-version: "22"
       - run: cd frontend && npm install --no-audit --no-fund
       - run: cd frontend && npm run build
+
+  docker-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build --tag jchess-smoke .
+      - run: docker run --rm jchess-smoke python -c "import main, lessons; assert len(lessons.LESSONS) >= 14"
