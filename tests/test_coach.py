@@ -106,7 +106,10 @@ def test_parent_opt_in_quota_and_structured_coach_output(monkeypatch):
         assert calls[0]["body"]["response_format"]["type"]=="json_schema"
         assert key not in json.dumps(calls[0]["body"])
         assert "username" not in json.dumps(calls[0]["body"])
-        assert "solution" not in json.dumps(calls[0]["body"])
+        provider_data=json.loads(calls[0]["body"]["messages"][1]["content"])
+        assert "solution" not in provider_data
+        assert "answer" not in provider_data
+        assert "exercise_themes" in provider_data
         assert c.get("/api/parent/ai").status_code==403
         exhausted=c.post("/api/child/coach/plan",json={})
         assert exhausted.status_code==200

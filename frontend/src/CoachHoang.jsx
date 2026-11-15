@@ -59,7 +59,8 @@ export function CoachHoang({onMission,notice}){
     </div>
     {plan&&<><div className="coach-message">
       <div className="coach-mini-avatar">♞</div>
-      <div><span className="eyebrow">{plan.source==='ai-assisted'?'AI-ASSISTED COACHING':'VERIFIED PRACTICE'}</span><h3>{plan.message}</h3><p>{plan.weakness_note}</p><p className="coach-speech">{plan.focus}</p><strong>Coach's tip: {plan.tip}</strong></div>
+      <div><span className="eyebrow">{plan.source==='ai-assisted'?'AI-ASSISTED COACHING':'VERIFIED PRACTICE'}</span><h3>{plan.message}</h3><p>{plan.weakness_note}</p>
+       {plan.profile&&<p><strong>Current practice band:</strong> {plan.profile.band} · {plan.profile.puzzles_reviewed} recent attempts. This is a learning indicator, not an official rating.</p>}<p className="coach-speech">{plan.focus}</p><strong>Coach's tip: {plan.tip}</strong></div>
     </div>
     <div className="coach-missions">{plan.missions.map(m=><div className="coach-mission" key={m.puzzle_id}>
       <div className="coach-mission-icon" style={{background:COLORS[m.category]||'#e9edff'}}>{ICONS[m.category]||'♞'}</div>

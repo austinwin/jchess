@@ -20,6 +20,7 @@ from db import (AIConfig, CoachAccess, CoachPlan, Family, Puzzle,
                 Attempt, Training, now)
 from content import CATEGORIES
 from lessons import LESSONS
+from adaptive import learner_profile
 
 THEME_HINTS={
  "fork":"Find a single move that attacks two targets. Checks and knight jumps are worth checking.",
@@ -150,7 +151,7 @@ def _plan(db,cid):
                   "This session helps establish your baseline.")
     return {"coach":"Hoang","source":"verified","created_at":now().isoformat()+"Z",
         "focus_category":weakest or "tactics",
-        "evidence":stats,"strengths":stronger,
+        "evidence":stats,"strengths":stronger,"profile":learner_profile(db,cid),
         "weakness_note":weakest_note,
         "message":"I prepared six short challenges to build your chess thinking.",
         "focus":"Find your opponent's threats before each move. Then check your candidate moves.",
