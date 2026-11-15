@@ -5,6 +5,7 @@ os.environ.setdefault("DEMO_USERS","true")
 os.environ.setdefault("AI_ENCRYPTION_KEY","test-only-encryption-key")
 from fastapi.testclient import TestClient
 from main import app
+from adaptive import skill_setting,learner_profile
 import chess
 
 def parent_account(client):
@@ -89,7 +90,7 @@ def test_parent_controlled_cloud_game_with_quota(monkeypatch):
     calls=[]
     class MockResponse:
         def raise_for_status(self):return None
-        def json(self):return {"choices":[{"message":{"content":"e7e5"}}]}
+        def json(self):return {"choices":[{"message":{"content":"Look for the opponent's checks before moving a piece."}}]}
     class FakeHTTP:
         def __init__(self,timeout):pass
         def __enter__(self):return self
@@ -110,12 +111,38 @@ def test_parent_controlled_cloud_game_with_quota(monkeypatch):
         g=kid.post("/api/child/game/start",json={"mode":"bot","provider":"cloud","level":"medium"}).json()
         move=kid.post("/api/child/game/move",json={"game_id":g["id"],"uci":"e2e4"})
         assert move.status_code==200,move.text
-        assert move.json()["moves"][1]["uci"]=="e7e5"
-        assert move.json()["moves"][1]["actor"]=="cloud"
-        assert len(calls)==1 and "FEN:" in calls[0][1]["messages"][1]["content"]
+        assert move.json()["moves"][1]["actor"] in ("stockfish","builtin")
+        assert move.json()["moves"][0]["tip"].startswith("Look for")
+        assert len(calls)==1 and "position_before" in calls[0][1]["messages"][1]["content"]
+        assert "You play Black" not in calls[0][1]["messages"][0]["content"]
         assert not opts.get("api_key")
         assert not kid.get("/api/child/game/options").json()["cloud_available"]
+        assert not kid.get("/api/child/game/options").json().get("api_key")
         # Already started games can still continue using the local bot when quota runs out.
         assert kid.post("/api/child/game/start",json={"mode":"bot","provider":"cloud"}).status_code==403
         p.post("/api/parent/ai",json={"enabled":False,"api_key":"","cloud_enabled":False})
         assert kid.get("/api/child/game/options").json()["cloud_available"] is False
+
+def test_skill_estimation_is_transparent_and_tiers_are_distinct():
+    assert skill_setting("medium",90)>skill_setting("medium",30)
+    for score in (20,45,75,95):
+        assert skill_setting("easy",score)<skill_setting("medium",score)
+        assert skill_setting("medium",score)<skill_setting("hard",score)
+    with TestClient(app) as parent,TestClient(app) as child:
+        username,cid=parent_account(parent)
+        child_login(child,username)
+        options=child.get("/api/child/game/options")
+        assert options.status_code==200,options.text
+        profile=options.json()["profile"]
+        assert profile["practice_score"]>=15
+        assert profile["recommended_level"] in ("easy","medium","hard")
+        assert "Elo" in profile["description"]
+        g=child.post("/api/child/game/start",json={"mode":"bot","level":profile["recommended_level"]}).json()
+        assert child.post("/api/child/game/move",json={"game_id":g["id"],"uci":"e2e4"}).status_code==200
+        reviewed=child.get("/api/child/game/review?game_id="+g["id"])
+        assert reviewed.status_code==200,reviewed.text
+        assert "moments" in reviewed.json()
+        assert reviewed.json()["analysed_white_moves"]<=1
+        assert parent.get("/api/parent/game/review?game_id="+g["id"]).status_code==200
+        with TestClient(app) as stranger:
+            assert stranger.get("/api/child/game/review?game_id="+g["id"]).status_code==401
