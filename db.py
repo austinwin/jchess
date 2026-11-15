@@ -85,17 +85,22 @@ def initialize():
     demo=os.getenv("DEMO_USERS","false").lower()=="true"
     production=bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
     pw=os.getenv("BOOTSTRAP_ADMIN_PASSWORD","")
-    if pw and len(pw)<12: raise RuntimeError("Set a bootstrap password of at least 12 characters")
+    child_pw=os.getenv("BOOTSTRAP_CHILD_PASSWORD","")
+    for label,value in (("BOOTSTRAP_ADMIN_PASSWORD",pw),("BOOTSTRAP_CHILD_PASSWORD",child_pw)):
+        if value and len(value)<12:
+            raise RuntimeError(label+" must have at least 12 characters")
+    if production and demo:
+        raise RuntimeError("DEMO_USERS=true cannot run on Render")
     admin=os.getenv("ADMIN_USERNAME","hoang").strip().lower()
     with DB.begin() as db:
         parent=db.scalar(select(User).where(User.username==admin))
         if not parent and (pw or (demo and not production)):
-            parent=User(username=admin,name="Hoang",password_hash=hash_pw(pw or "hoang"),role="parent",must_reset=not bool(pw))
+            parent=User(username=admin,name="Hoang",password_hash=hash_pw(pw or "hoang"),role="parent",must_reset=True)
             db.add(parent);db.flush()
-        if demo and not production and parent:
+        if parent and (child_pw or (demo and not production)):
             child=db.scalar(select(User).where(User.username=="justin"))
             if not child:
-                child=User(username="justin",name="Justin",password_hash=hash_pw("justin"),role="child",must_reset=True)
+                child=User(username="justin",name="Justin",password_hash=hash_pw(child_pw or "justin"),role="child",must_reset=True)
                 db.add(child);db.flush()
             if not is_parent(db,parent.id,child.id):
                 db.add(Family(parent_id=parent.id,child_id=child.id))
