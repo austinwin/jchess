@@ -354,4 +354,4 @@ def ai_coach(cid:int,db:Session=Depends(session),u=Depends(parent)):
 
 if __name__=="__main__":
     from qpyserve import run
-    run(app,frontend="frontend",port=int(os.getenv("PORT","1111")))
+    run(app,frontend="frontend",port=int(os.getenv("PORT","1111")),host="0.0.0.0" if os.getenv("RENDER") or os.getenv("PORT") else "127.0.0.1")
